@@ -10,8 +10,9 @@ import (
 	"net"
 	"os"
 	"reflect"
-	"sync"
 	pb "server/grpc_gen"
+	"strings"
+	"sync"
 )
 
 const (
@@ -19,46 +20,67 @@ const (
 )
 
 type AlsaServer struct {
-	card string
-	device string
-	monitor Monitor
-	ctrlIdMap map[string]int32
-	updates  chan *ControlInfo
-	requests chan *pb.Request
-	clients []*pb.Alsamixer_CommunicateServer
-	clientMux sync.Mutex
+	cardName   string
+	cardNum    int32
+	monitor    Monitor
+	controls   map[string]*ControlInfo
+	updates    chan *ControlInfo
+	requests   chan *pb.Request
+	clients    []*pb.Alsamixer_CommunicateServer
+	clientMux  sync.Mutex
 	grpcServer *grpc.Server
 }
 
-func (s *AlsaServer) Start() error {
+func (s *AlsaServer) Start(cardName string, controlNames []string) error {
+	s.cardName = cardName
 
 	cards, err := aplayList()
 	if err != nil {
 		return err
 	}
 
-	if cardNum, found := cards[s.card]; found {
-		s.device = fmt.Sprintf("hw:%d", cardNum)
+	if cardNum, found := cards[s.cardName]; found {
+		s.cardNum = cardNum
 	} else {
-		return fmt.Errorf("unable to identify card %s", s.card)
+		return fmt.Errorf("unable to identify card %s in %v", s.cardName, cards)
 	}
 
-	fmt.Printf("Card %s is present as %s\n", s.card, s.device)
+	fmt.Printf("Card %s is present as card number %d\n", s.cardName, s.cardNum)
 
-	// Get control states
-	controls, err := amixerContents(s.device)
-	s.ctrlIdMap = make(map[string]int32)
-	for _, ctrl := range controls {
-		s.ctrlIdMap[ctrl.name] = ctrl.id
+	// Prepare controlMap
+	s.controls = make(map[string]*ControlInfo, len(controlNames))
+	for _, controlName := range controlNames {
+		s.controls[controlName] = nil
 	}
-	fmt.Printf("Map", s.ctrlIdMap)
 
-	// Monitor alsa controls
+	// Get control IDs from amixer
+	allControls, err := amixerContents(s.cardNum)
+	for i := 0; i < len(allControls); i++ {
+		control := allControls[i]
+		fmt.Printf("Discovered Control %s (%p -- %p): %v\n", control.name, &allControls[i], &control, control)
+		if _, found := s.controls[control.name]; found {
+			s.controls[control.name] = &control
+		} else {
+			fmt.Println("Ignoring", control.name)
+		}
+	}
+
+	// Check for missing all_controls
+	for controlName, control := range s.controls {
+		if control == nil {
+			return fmt.Errorf("unable to find control %s on card %s (%d): %v", controlName, s.cardName,
+				s.cardNum, allControls)
+		} else {
+			fmt.Printf("Control %s: %v\n", controlName, control)
+		}
+	}
+
+	// Monitor alsa all_controls
 	s.updates = make(chan *ControlInfo)
 	s.clients = []*pb.Alsamixer_CommunicateServer{}
 
 	s.monitor = Monitor{
-		device: s.device,
+		cardNum: s.cardNum,
 		updates:  s.updates,
 	}
 	s.monitor.Start()
@@ -73,9 +95,9 @@ func (s *AlsaServer) Start() error {
 	go func() {
 		for {
 			req := <-s.requests
-			if id, found := s.ctrlIdMap[req.Control]; found {
+			if ctrl, found := s.controls[req.Control]; found {
 				fmt.Printf("Setting volume level for %s to %d\n", req.Control, req.Volume)
-				cset(s.device, id, req.Volume)
+				cset(s.cardNum, ctrl.id, req.Volume)
 			} else {
 				fmt.Printf("Unrecognized control %s for\n", req.Control)
 			}
@@ -105,11 +127,19 @@ func createResponseControl(ctrl *ControlInfo) *pb.Response_Control {
 }
 
 func (s *AlsaServer) processUpdateFromMonitor(ctrl *ControlInfo) {
+	// Store update
+	if _, found := s.controls[ctrl.name]; found {
+		fmt.Println("Applying update for", ctrl.name)
+		s.controls[ctrl.name] = ctrl
+	} else{
+		fmt.Println("Ignoring update to", ctrl.name)
+	}
+
 	// Build update
-	update := pb.Response{Card: s.card, Controls: []*pb.Response_Control{createResponseControl(ctrl)}}
+	update := pb.Response{Card: s.cardName, Controls: []*pb.Response_Control{createResponseControl(ctrl)}}
 
+	// Broadcast update
 	fmt.Printf("Broadcasting update to %s to %d clients (%v)\n", ctrl.name, len(s.clients), &s.clients)
-
 	s.clientMux.Lock()
 	defer s.clientMux.Unlock()
 	var unavailableClients []*pb.Alsamixer_CommunicateServer
@@ -166,21 +196,13 @@ func (s *AlsaServer) removeUnavailable(unavailables []*pb.Alsamixer_CommunicateS
 func (s *AlsaServer) communicate(stream pb.Alsamixer_CommunicateServer) error {
 	s.addClient(&stream)
 
-	// Get current states
-	current, err := amixerContents(s.device)
-
 	// Send current states to client that just connected
-	if err == nil {
-		fmt.Println("Gathering updates", current)
-		updates := make([]*pb.Response_Control, len(current))
-		for i, ctrl := range current {
-			updates[i] = createResponseControl(&ctrl)
-		}
-		fmt.Println("Sending initial states", updates)
-		stream.Send(&pb.Response{Card: s.card, Controls: updates})
-	} else {
-		fmt.Println(err)
+	fmt.Println("Sending initial", s.controls)
+	var updates []*pb.Response_Control
+	for _, ctrl := range s.controls {
+		updates = append(updates, createResponseControl(ctrl))
 	}
+	stream.Send(&pb.Response{Card: s.cardName, Controls: updates})
 
 	for {
 		req, err := stream.Recv()
@@ -198,11 +220,19 @@ func (s *AlsaServer) communicate(stream pb.Alsamixer_CommunicateServer) error {
 }
 
 func main() {
-
-	server := AlsaServer{
-		card: os.Args[1],
+	// Parse controls argument
+	if len(os.Args) != 3 {
+		log.Fatal("Must provide 2 arguments 'card name(s)' 'control name(s)'")
 	}
-	server.Start()
+
+	cardName := os.Args[1]
+	controlNames := strings.Split(os.Args[2], ",")
+
+	server := AlsaServer{}
+	err := server.Start(cardName, controlNames)
+	if err != nil {
+		log.Panic(err)
+	}
 }
 
 //go func() {

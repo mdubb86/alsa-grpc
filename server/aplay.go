@@ -39,14 +39,14 @@ import (
 //  Subdevice #0: subdevice #0
 //`
 
-func aplayList() (map[string]int, error) {
+func aplayList() (map[string]int32, error) {
 	output, err := exec.Command("aplay", "-l").Output()
 	if err != nil {
 		return nil, err
 	}
 
-	r := regexp.MustCompile(`^card (\d+): \w+ \[(\w+)]`)
-	cards := map[string]int{}
+	r := regexp.MustCompile(`^card (\d+): [A-Za-z0-9_ ]+ \[([A-Za-z0-9_ ]+)]`)
+	cards := map[string]int32{}
 	for _, line := range strings.Split(string(output), "\n") {
 		bits := r.FindStringSubmatch(line)
 		if len(bits) == 3 {
@@ -55,7 +55,7 @@ func aplayList() (map[string]int, error) {
 				return nil, err
 			}
 			name := bits[2]
-			cards[name] = cardNum
+			cards[name] = int32(cardNum)
 		}
 	}
 	return cards, nil

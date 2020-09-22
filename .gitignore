@@ -2,3 +2,5 @@ client/remote_alsamixer_client/__pycache__
 client/remote_alsamixer_client/grpc_gen/__pycache__
 client/venv
 server/build
+__init__.cpython-37.pyc
+client/alsa_grpc_client/grpc_gen/__pycache__

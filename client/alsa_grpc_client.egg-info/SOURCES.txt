@@ -1,0 +1,7 @@
+README.md
+setup.py
+alsa_grpc_client/__init__.py
+alsa_grpc_client.egg-info/PKG-INFO
+alsa_grpc_client.egg-info/SOURCES.txt
+alsa_grpc_client.egg-info/dependency_links.txt
+alsa_grpc_client.egg-info/top_level.txt

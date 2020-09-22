@@ -51,6 +51,10 @@ func parseInt(s string, key string) (int32, error) {
 func parseHeader(ctrl *ControlInfo, line string) error {
 	bits := strings.Split(line, ",")
 
+	if len(bits) != 3 {
+		return fmt.Errorf("header line must have three comma separated values (got %d values)", len(bits))
+	}
+
 	id, err := parseInt(bits[0], "numid")
 	if err != nil {
 		return err
@@ -75,6 +79,10 @@ func parseHeader(ctrl *ControlInfo, line string) error {
 //; type=INTEGER,access=rw---R--,values=2,min=0,max=248,step=0
 func parseAttrs(ctrl *ControlInfo, line string) error {
 	bits := strings.Split(strings.TrimPrefix(line, "  ; "), ",")
+
+	if len(bits) != 6 {
+		return fmt.Errorf("attrs line must have six comma separated values (got %d values)", len(bits))
+	}
 
 	datatype, err := parsePair(bits[0], "type")
 	if err != nil {
@@ -179,8 +187,9 @@ func parseControl(lines []string) (*ControlInfo, error) {
 
 //amixer -D "hw:0" cset numid=2 58%
 
-func cget(device string, numid int) (ControlInfo, error) {
-	output, err := exec.Command("amixer", "-D", device, "cget", fmt.Sprintf("numid=%d", numid)).Output()
+func cget(cardNum int, ctrlId int) (ControlInfo, error) {
+	output, err := exec.Command("amixer", "--card", strconv.Itoa(cardNum),
+		"cget", fmt.Sprintf("numid=%d", ctrlId)).Output()
 	if err != nil {
 		return ControlInfo{}, err
 	}
@@ -189,14 +198,14 @@ func cget(device string, numid int) (ControlInfo, error) {
 	return *ctrl, err
 }
 
-func cset(device string, numid int32, volumes []int32) (ControlInfo, error) {
+func cset(cardNum int32, numid int32, volumes []int32) (ControlInfo, error) {
 	volStrs := make([]string, len(volumes))
 	for i, v := range volumes {
 		volStrs[i] = fmt.Sprintf("%d%", v)
 	}
 
-	output, err := exec.Command("amixer", "-D", device, "cset", fmt.Sprintf("numid=%d", numid),
-		strings.Join(volStrs, ",")).Output()
+	output, err := exec.Command("amixer", "-c", strconv.Itoa(int(cardNum)), "cset",
+		fmt.Sprintf("numid=%d", numid), strings.Join(volStrs, ",")).Output()
 
 	if err != nil {
 		return ControlInfo{}, err
@@ -206,8 +215,10 @@ func cset(device string, numid int32, volumes []int32) (ControlInfo, error) {
 	return *ctrl, err
 }
 
-func amixerContents(device string) ([]ControlInfo, error) {
-	output, err := exec.Command("amixer", "-D", device, "contents").Output()
+func amixerContents(cardNum int32) ([]ControlInfo, error) {
+	fmt.Println("Getting contents", cardNum,strconv.Itoa(int(cardNum)))
+	output, err := exec.Command("amixer", "--card", strconv.Itoa(int(cardNum)), "contents").Output()
+
 	if err != nil {
 		return nil, err
 	}
@@ -219,16 +230,18 @@ func amixerContents(device string) ([]ControlInfo, error) {
 			return nil
 		}
 
+		// Ignore error when parsing to allow parsing to continue
 		ctrl, err := parseControl(lines)
-		if err != nil {
-			return err
+		if err == nil {
+			fmt.Printf("Parsed control %s (%p)\n", ctrl.name, &ctrl)
+			ctrls = append(ctrls, *ctrl)
 		}
-		ctrls = append(ctrls, *ctrl)
 		return nil
 	}
 
 	var chunk []string
 	for _, line := range strings.Split(string(output), "\n") {
+		fmt.Println("processing line", line)
 		if strings.HasPrefix(line, "numid") {
 			if err := collect(chunk); err != nil {
 				return nil, err

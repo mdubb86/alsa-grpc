@@ -6,9 +6,9 @@ HERE = pathlib.Path(__file__).parent
 README = (HERE / "README.md").read_text()
 
 setup(
-    name="remote_alsamixer_client",
-    version="0.0.4",
-    packages=["remote_alsamixer_client"],
+    name="alsa_grpc_client",
+    version="0.0.8",
+    packages=["alsa_grpc_client"],
     # url="",
     description="Client for Remote Alsamixer",
     long_description=README,

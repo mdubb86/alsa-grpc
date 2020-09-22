@@ -2,10 +2,10 @@ import queue
 import threading
 import logging
 import grpc
-from remote_alsamixer_client.grpc_gen import alsamixer_pb2
-from remote_alsamixer_client.grpc_gen import alsamixer_pb2_grpc
+from alsa_grpc_client.grpc_gen import alsamixer_pb2
+from alsa_grpc_client.grpc_gen import alsamixer_pb2_grpc
 
-__version__ = "0.0.5"
+__version__ = "0.0.8"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -123,18 +123,18 @@ if __name__ == '__main__':
 
 
 
-    client = AlsaClient("192.168.0.22", 50051, on_connect)
+    client = AlsaClient("192.168.0.77", 50051, on_connect)
 
     client.connect()
     # sleep(1)
-    # remote_alsamixer_client.set_volume(10)
+    # alsa_grpc_client.set_volume(10)
     # sleep(5)
-    # remote_alsamixer_client.disconnect()
+    # alsa_grpc_client.disconnect()
     # sleep(5)
-    # remote_alsamixer_client.connect()
+    # alsa_grpc_client.connect()
     # sleep(.1)
-    # remote_alsamixer_client.set_volume(0.2)
+    # alsa_grpc_client.set_volume(0.2)
     # sleep(5)
-    # remote_alsamixer_client.disconnect()
+    # alsa_grpc_client.disconnect()
 
 

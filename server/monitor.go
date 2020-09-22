@@ -9,14 +9,14 @@ import (
 )
 
 type Monitor struct {
-	device string
+	cardNum  int32
 	updates  chan *ControlInfo
 	cmd      *exec.Cmd
 }
 
 func (m Monitor) Start() error {
 	// Use stdbuf for immediate output (disable buffering on stdout)
-	m.cmd = exec.Command("/usr/bin/stdbuf", "-oL", "alsactl", "monitor", m.device)
+	m.cmd = exec.Command("/usr/bin/stdbuf", "-oL", "alsactl", "monitor")
 	stdout, err := m.cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -26,36 +26,33 @@ func (m Monitor) Start() error {
 		return err
 	}
 
-	r := regexp.MustCompile(`^node (.*), #(\d+) \((\d+),(\d+),(\d+),(\w+),(\d+)\) (\w+)$`)
+	// Parsing format derived from https://github.com/alsa-project/alsa-utils/blob/master/alsactl/monitor.c
+	// node hw:0, #1 (2,0,0,Master,0) VALUE
+	// card 1, #8 (2,0,0,Mic Capture Volume,0) VALUE
+	r := regexp.MustCompile(`^(node|card) (hw:)?(\d+), #(\d+) \((\d+),(\d+),(\d+),([A-Za-z0-9\-_ ]+),(\d+)\) (\w+)$`)
 
 	go func() {
 		fmt.Println("Starting monitoring")
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			// Parsing format derived from https://github.com/alsa-project/alsa-utils/blob/master/alsactl/monitor.c
 			bits := r.FindStringSubmatch(scanner.Text())
-			deviceName := bits[1]
-			numid, err := strconv.Atoi(bits[2])
-			//iface := strconv.Atoi(bits[3])
-			//device := strconv.Atoi(bits[4])
-			//subdevice := strconv.Atoi(bits[5])
-			//name := bits[6]
-			//index := strconv.Atoi(bits[7])
-			if err != nil {
-				// TODO log error
-			}
 
-			ctlInfo, err := cget(deviceName, numid)
-			if err != nil {
-				fmt.Println(err.Error())
+			if len(bits) != 11 {
+				fmt.Println("Ignoring unrecognized update: ", scanner.Text())
 			} else {
-				m.updates <- &ctlInfo
+				cardNum, _ := strconv.Atoi(bits[3])
+				ctrlId, _ := strconv.Atoi(bits[4])
+				ctlInfo, err := cget(cardNum, ctrlId)
+				if err != nil {
+					fmt.Println(err.Error())
+				} else {
+					m.updates <- &ctlInfo
+				}
 			}
 		}
 	}()
 	return nil
 }
-
 
 // Code for killing process
 //err := cmd.Process.Kill()
