@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option go_package = "./grpc_gen";
+
+package alsa;
+
+service Alsamixer {
+	rpc Communicate(stream Request) returns (stream Response) {}
+}
+
+message Request {
+  string card = 1;
+	string control = 2;
+ 	repeated int32 volume = 3;
+}
+
+message Response {
+	message Control {
+		string name = 1;
+	 	repeated int32 volume = 2;
+  }
+  string card = 1;
+  repeated Control controls = 2;
+}
