@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"reflect"
 	"sync"
 	pb "server/grpc_gen"
@@ -196,12 +197,10 @@ func (s *AlsaServer) communicate(stream pb.Alsamixer_CommunicateServer) error {
 	}
 }
 
-
-
 func main() {
 
 	server := AlsaServer{
-		card: "snd_rpi_hifiberry_amp",
+		card: os.Args[1],
 	}
 	server.Start()
 }
