@@ -9,3 +9,8 @@ To build
 ```shell script
 python3 setup.py sdist bdist_wheel
 ```
+
+To upload release
+```shell script
+twine upload dist/*
+```

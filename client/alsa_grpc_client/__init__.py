@@ -2,10 +2,8 @@ import queue
 import threading
 import logging
 import grpc
-from alsa_grpc_client.grpc_gen import alsamixer_pb2
-from alsa_grpc_client.grpc_gen import alsamixer_pb2_grpc
-
-__version__ = "0.0.8"
+from .grpc_gen import alsamixer_pb2
+from .grpc_gen import alsamixer_pb2_grpc
 
 _LOGGER = logging.getLogger(__name__)
 
